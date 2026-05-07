@@ -20,6 +20,22 @@
   -> 返回原始 dict / TarsDict 或 Pydantic 模型
 ```
 
+### 批量并发请求
+
+```text
+多个模块方法
+  -> self._build_request(...)
+  -> Request 列表
+  -> Client.gather(requests)
+  -> 按协议、平台、公共参数和凭证分组
+  -> 每组按 batch_size 拆分为批量请求
+  -> Client.request_api(..., session=multiplexed_session)
+  -> 按 req_n 解析每个响应项
+  -> 按输入顺序返回结果
+```
+
+`gather` 的分组边界由 `Request._group_key` 决定。只有协议类型、`preserve_bool`、显式平台、公共参数和凭证兼容的请求才会合并到同一个批量请求中。
+
 ## 编写新的 API
 
 API 按功能拆分在 `qqmusic_api/modules/` 下，添加新的 API 只需在对应的模块中添加请求方法即可。

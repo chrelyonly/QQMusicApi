@@ -4,6 +4,7 @@ import copy
 from collections.abc import Generator
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from pydantic import BaseModel
@@ -81,6 +82,23 @@ class Request(Generic[RequestResultT]):
     def __await__(self) -> Generator[Any, Any, RequestResultT]:
         """使 Request 对象可被 await 执行."""
         return self._client.execute(self).__await__()
+
+    @cached_property
+    def _group_key(
+        self,
+    ) -> tuple[
+        bool,
+        bool,
+        Platform | None,
+        tuple[tuple[str, int | str | bool], ...] | None,
+        tuple[int, str],
+    ]:
+        """返回可批量合并执行的稳定分组键."""
+        platform = self.platform
+        credential = self.credential or self._client.credential
+        credential_key = (credential.musicid, credential.musickey)
+        comm_items = tuple(sorted(self.comm.items(), key=lambda item: item[0])) if self.comm is not None else None
+        return (self.is_jce, self.preserve_bool, platform, comm_items, credential_key)
 
     def replace(self, **changes: Any) -> "Request[RequestResultT]":
         """返回一个应用了修改的新 Request 对象, 不会修改原对象."""
