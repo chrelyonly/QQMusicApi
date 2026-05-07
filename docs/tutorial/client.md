@@ -19,15 +19,6 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-## 常用初始化参数
-
-`Client` 当前常用参数包括：
-
-* `credential`: 全局凭证。
-* `device_path`: 单个设备信息文件路径，传入即可复用设备信息。
-* `enable_sign`: 是否启用签名参数。
-* `platform`: 请求默认平台。
-
 ## 批量并发请求
 
 `Client.gather()` 可以一次执行多个 `Request`，并按传入顺序返回解析后的结果。适合同时请求多个互不依赖的 API。

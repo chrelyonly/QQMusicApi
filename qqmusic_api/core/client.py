@@ -1,5 +1,6 @@
 """API 客户端核心实现. 整合网络传输、鉴权与业务模块访问."""
 
+import asyncio
 import uuid
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
@@ -40,9 +41,22 @@ class Client:
         *,
         platform: Platform | None = None,
         device_path: str | None = None,
+        max_concurrent_requests: int | None = None,
     ):
-        """初始化客户端实例."""
+        """初始化客户端实例.
+
+        Args:
+            credential: 全局默认凭证.
+            platform: 全局默认请求平台.
+            device_path: 设备信息文件路径.
+            max_concurrent_requests: 最大同时发送 HTTP 请求数量. 默认为 5.
+        """
+        if max_concurrent_requests is not None and max_concurrent_requests <= 0:
+            raise ValueError("max_concurrent_requests 必须大于 0")
         self._session = AsyncSession()
+        self._request_semaphore = asyncio.Semaphore(
+            max_concurrent_requests if max_concurrent_requests is not None else 5
+        )
         self.credential = credential or Credential()
         self.platform = platform or Platform.ANDROID
 
@@ -200,11 +214,8 @@ class Client:
             headers["User-Agent"] = await self._get_user_agent(platform)
         kwargs["headers"] = headers
 
-        return await self._session.request(
-            method,
-            url,
-            **kwargs,
-        )
+        async with self._request_semaphore:
+            return await self._session.request(method, url, **kwargs)
 
     async def request_api(
         self,
@@ -248,11 +259,12 @@ class Client:
                     for idx, req in enumerate(data)
                 },
             ).encode()
-            return await active_session.post(
-                "http://u.y.qq.com/cgi-bin/musicw.fcg",
-                data=content,
-                headers={"User-Agent": user_agent},
-            )
+            async with self._request_semaphore:
+                return await active_session.post(
+                    "http://u.y.qq.com/cgi-bin/musicw.fcg",
+                    data=content,
+                    headers={"User-Agent": user_agent},
+                )
 
         payload: dict[str, Any] = {
             "comm": finalcomm,
@@ -265,12 +277,13 @@ class Client:
                 "param": req["param"] if req["preserve_bool"] else bool_to_int(req["param"]),
             }
 
-        return await active_session.post(
-            "https://u.y.qq.com/cgi-bin/musicu.fcg",
-            json=payload,
-            params=params,
-            headers={"User-Agent": user_agent},
-        )
+        async with self._request_semaphore:
+            return await active_session.post(
+                "https://u.y.qq.com/cgi-bin/musicu.fcg",
+                json=payload,
+                params=params,
+                headers={"User-Agent": user_agent},
+            )
 
     @overload
     async def gather(
@@ -372,7 +385,6 @@ class Client:
             )
         if not grouped_requests:
             return []
-
         batch_responses: list[tuple[list[int], Response]] = []
         async with AsyncSession(multiplexed=True) as session:
             for comm, credential, platform, is_jce, group_requests in grouped_requests.values():
